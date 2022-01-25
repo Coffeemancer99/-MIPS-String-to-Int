@@ -1,0 +1,169 @@
+#Desi Ah Yek
+.data
+	prompt: .asciiz "Please enter a sequence of digits: "
+	promptInt: .asciiz "Please enter an integer of range 2 to 16: "
+	
+	newLine: .asciiz "\n"
+	
+	failedBase: .asciiz "The base you entered is out of range. Please enter a base 2-16\n"
+	negative: .asciiz "We have entered a negative sign"
+#$s0: Digit String (First Prompt)
+#$s1: Base (Second Prompt)
+.text
+	li $s3, 1 #This will count the number of characters 
+	
+	#==Prompt "Please enter a sequence of digits: "==#
+	li $v0, 4 #Service Number For Print
+	la $a0, prompt #Print the prompt 
+	syscall #Call it
+	
+	#==ASK FOR STRING==#
+	add $a1, $0, 1024 #Allocate maximum size for input
+	li $v0, 8 #Service number for string input
+	syscall #Call it
+	move $s0, $a0 #$s0 will hold the string input
+
+	#==Prompt==#
+	li $v0, 4 #Service Number For Print
+	la $a0, promptInt #Print the prompt 
+	syscall #Call it
+	
+	#==ASK FOR BASE==#
+	li $v0, 5 #Service number for integer input
+	syscall #Call it
+	move $s1, $v0 #Store the input into register $s1
+	
+	jal checkLegalBase #Check to see if the base is legal
+	jal checkEmptyString #Check to see if the string is legal
+	add $s4, $s0, $zero #Temporary version of string
+	beq $t1, 45, negativeFlag #Check for negative sign
+	addi $s4, $s4, 0
+	j countString #Jump to finish label
+
+#==Check if Empty Case==
+checkEmptyString:
+	lbu $t1, 0($s0) #Load the first letter of the string
+	beq $t1, 10, error #If they are equal (both new lines=empty)
+	jr $ra #Jump to where we were called 
+
+negativeFlag:
+	add $s2, $zero, 1 #If this register=1, it is negative
+	lbu $t1, 1($s0) #Load the next character, we know that first char="-"
+	beq $t1, 10, error #If the next char is the new line character, return 0 
+	addi $s4, $s4, 1 #Make this an index instead of the character
+	j countString #Jump to finish label
+
+error:
+	li $v0, 1
+	add $a0, $zero, $zero
+	syscall
+	j fin
+
+checkLegalBase:	
+	blt $s1, 2, errorBase #If ascii value less than 2
+	bgt $s1, 16 errorBase #If ascii greater than 16
+
+	jr $ra #Jump to where we were called
+
+errorBase:
+	#==Failed Base Message==#
+	li $v0, 4 #Service Number For Print
+	la $a0, failedBase #Print the prompt 
+	syscall #Call it
+	li $v0, 1 #Print integer service number
+	add $a0, $zero, $zero #Send 0 to the print address
+	syscall #Print 0 to console
+	j fin #Jump to finish label
+	
+#This method will count the characters inside the digit string
+#Will additionally check for illegal characters 
+countString:
+	lb $t2, 0($s4) #Load the next character
+	beq $t2, 10, countComplete #Is it equal to the new line character?
+	
+	blt $t2, 48, error #If value is less than ascii value of2, it is an error
+	bgt $t2, 57, isChar #Value is not a number, must be a character or error
+	sub $t2, $t2, 47 #Subtract ASCII value by 0 as well as an additional 1 (check if equal)
+	bgt $t2, $s1, error
+	j increment #Loop back up!
+	
+increment:
+	addi $s4, $s4, 1 #Increment the string pointer
+	j countString	
+isChar:
+	blt $t2, 65, error #If it is less than ascii for A, it MUST be an error
+	sub $t2, $t2, 65 #Subtract the ascii value for that char with A
+	addi $t2, $t2, 10 #Add 10, it is now a number version of the ASCII char
+	bgt $t2, $s1, error #OUT OF RANGE ERROR
+	j increment
+	
+
+countComplete:
+	sub $s4, $s4, $s0 #Subtract offset by original string to get string length
+	add $s0, $s4, $s0 #Point string to last character (Working right to left) 
+	
+	#sub $s4, $s4, $s2 #Subtract the negative flag, 0 if positive 1 if negative
+	sub $s0, $s0, 1
+	#add $s4, $s4, 1
+	#add $s2, $s2, 1
+	#This reuses an old register to account for the extra length of the string...
+
+	add $s5, $zero, $zero #This will be the final result
+	add $s6, $zero, $zero #Keeps track of the power 
+	
+conversion:
+	beq $s4, $s2, fin #If it is equal to negative offset, finalize
+	lb $t0, 0($s0) #Load the current character
+	add $t1, $zero, 1 #This will be used in the exponent label
+	add $t2, $s1, $zero #Will be used in exponent label
+	bgt $t0, 57, isChar2 #If greater than 57, it is a character
+	sub $t0, $t0, 48
+	beq $s6, 0, zeroPower
+	j exponent
+isChar2:
+	sub $t0, $t0, 65 #Subtract the ascii value for that char with A
+	addi $t0, $t0, 10 #Add 10, it is now a number version of the ASCII char
+	beq $s6, 0, zeroPower
+	
+exponent:
+	beq $t1, $s6, decrement #If equal to 0, jump out
+	add $t1, $t1, 1 #Decrement exponent counter
+	mul $t2, $t2, $s1 #Multiply it by itself
+
+	j exponent #Jump back up
+	
+zeroPower:
+	add $t2, $0, 1
+	j decrement
+	
+decrement:
+	li $v0, 1 #Service Number For Print
+	move $a0, $t0 #Print the prompt 
+	syscall #Call it
+
+	li $v0, 4 #Service Number For Print
+	la $a0, newLine
+	syscall #Call it
+
+	mul $t0, $t2, $t0
+	add $s5, $s5, $t0
+	
+	add $s6, $s6, 1
+	sub $s0, $s0, 1 #Decrement string pointer 
+	sub $s4, $s4, 1 #Decrement counter to lean towards MSB
+	j conversion #Jump to conversion
+flipSign:
+	add $s4, $s5, $zero
+	sub $s5, $s5, $s4
+	sub $s5, $s5, $s4
+	add $s2, $zero, $zero
+	j fin
+	
+fin:
+	beq $s2, 1, flipSign
+	
+	li $v0, 1 #Service Number For Print
+	move $a0, $s5 #Print the prompt 
+	syscall #Call it
+	li $v0, 10
+	syscall
